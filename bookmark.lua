@@ -1,6 +1,3 @@
---bookmark light version
---record your playing history for each folder
---and you can choose resume to play next time
 local mp = require 'mp'
 local utils = require 'mp.utils'
 local options = require 'mp.options'
@@ -8,7 +5,7 @@ local options = require 'mp.options'
 local M = {}
 
 local o = {
-    save_period = 30
+    save_period = 60
 }
 options.read_options(o)
 
@@ -24,7 +21,6 @@ local pl_idx = 1
 local c_idx = 1
 
 local mk_name = ".mpv.bookmark"
-local mk_path
 
 local wait_msg
 
@@ -84,35 +80,27 @@ function M.ld_mark()
         print("can not open bookmark file")
         return false
     end
-    pl_name = file:read()
-    if pl_name == nil then
-        print("can not get file's name of last play")
-        file:close()
-        return false
-    else
-        pl_path = pl_root.."/"..pl_name
+    local marks = {}
+    for line in file:lines() do
+        local name, percent = line:match("^(.-)=(%d+%.?%d*)$")
+        if name and percent then
+            marks[name] = tonumber(percent)
+        end
     end
-    pl_percent = file:read("*n")
-    if pl_percent == nil then
-        print("can not get play percent of last play")
-        file:close()
-        return false
-    end
-    if(pl_percent >= 100) then
-        pl_percent = 99
-    end
-    print("last paly:\n", pl_name, "\n", pl_percent, "%")
     file:close()
-    return true
+    return marks
 end
 
 function M.save_mark()
     local name = mp.get_property("filename")
     local percent = mp.get_property("percent-pos", 0)
     if not(name == nil or percent == 0) then
+        local marks = M.ld_mark() or {}
+        marks[name] = percent
         local file = io.open(mk_path, "w")
-        file:write(name.."\n")
-        file:write(percent)
+        for k, v in pairs(marks) do
+            file:write(k .. "=" .. v .. "\n")
+        end
         file:close()
     end
 end
@@ -178,36 +166,23 @@ function M.exe()
     end
     pl_root = c_path:match("(.+)/")
     mk_path = pl_root.."/"..mk_name
-    if(not M.ld_mark()) then
-        pl_name = ""
-        pl_path = ""
-        pl_percent = 0
-    end
+    local marks = M.ld_mark() or {}
+    pl_percent = marks[c_file] or 0
+    pl_name = c_file
+    pl_path = c_path
     local c_type = c_file:match("%.([^.]+)$")
-    print("palying type:", c_type)
-    local pl_exist = false
-    if c_type ~= nil then
-        local temp_list = utils.readdir(pl_root.."/", "files")
-        table.sort(temp_list)
-        for i = 1, #temp_list do
-            local name = temp_list[i]
-            if name:match("%."..c_type.."$") ~= nil then
-                local path = pl_root.."/"..name
-                table.insert(pl_list, path)
-                if(pl_name == name) then
-                    pl_exist = true
-                    pl_idx = #pl_list
-                end
-                if(c_file == name) then
-                    c_idx = #pl_list
-                end
+    print("playing type:", c_type)
+    local temp_list = utils.readdir(pl_root.."/", "files")
+    table.sort(temp_list)
+    for i = 1, #temp_list do
+        local name = temp_list[i]
+        if name:match("%."..c_type.."$") ~= nil then
+            local path = pl_root.."/"..name
+            table.insert(pl_list, path)
+            if(c_file == name) then
+                c_idx = #pl_list
             end
         end
-    end
-    if(not pl_exist) then
-        pl_path = c_path
-        pl_name = c_file
-        pl_idx = c_idx
     end
     if(c_idx == pl_idx) then
         mp.set_property("percent-pos", pl_percent)
